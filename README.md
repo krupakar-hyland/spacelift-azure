@@ -11,7 +11,7 @@ This repository contains Terraform code to provision basic Azure infrastructure 
 ## Prerequisites
 
 1. **Azure Subscription**: You need an active Azure subscription
-2. **Spacelift Account**: https://krupakar-hyland.app.spacelift.io
+2. **Spacelift Account**: https://moviepotter.app.spacelift.io
 3. **Managed Identity**: Created in Azure with federated credentials configured
 4. **Stack**: `azure-demo-stack` created in Spacelift
 
@@ -60,24 +60,25 @@ For automatic runs when pushing code or opening pull requests, you need to conne
 
 **Why it matters:**
 - **Raw Git URL**: Spacelift can clone the repo, but GitHub has no way to notify Spacelift about changes. Runs only trigger manually or on schedule.
-- **GitHub App**: Installs an OAuth app on your repo that registers webhooks. GitHub automatically notifies Spacelift on every push and pull request, triggering automatic runs.
+- **GitHub App**: Installs an app on your GitHub account that automatically delivers push and pull request events to Spacelift based on the app's configured permissions and event subscriptions.
 
 **Setup:**
 
 1. **Install GitHub App Integration**
-   - Go to: `https://krupakar-hyland.app.spacelift.io/vcs/integrations`
+   - Go to: `https://moviepotter.app.spacelift.io/vcs/integrations`
    - Click **Create Integration** → **GitHub App**
-   - Authorize and grant access to `krupakar-hyland` organization and this repository
+   - Authorize and grant access to your GitHub organization and repository
 
 2. **Configure Stack Source Code**
-   - Go to: `https://krupakar-hyland.app.spacelift.io/stack/azure-demo-stack/settings/source-code`
+   - Go to: `https://moviepotter.app.spacelift.io/stack/azure-demo-stack/settings/source-code`
    - Change from **Raw Git** to the **GitHub App** integration
    - Specify branch: `main`
 
-3. **Verify Webhook**
-   - The webhook is automatically registered with GitHub
-   - You can verify it in: GitHub repo → Settings → Webhooks
-   - Webhook URL points to: `https://moviepotter.app.spacelift.io`
+3. **Verify GitHub App Configuration**
+   - The webhook is configured at the **app level**, not per-repository
+   - To verify: Go to GitHub Settings → **Installed GitHub Apps** → Click the Spacelift app
+   - The app automatically delivers all subscribed events (push, pull_request) to Spacelift
+   - An empty "Webhooks" section under the repo settings is expected — the app handles event delivery
 
 **Automatic Run Triggers:**
 - **Push to main branch**: Triggers a `TRACKED` run (proposed changes can be applied)
