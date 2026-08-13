@@ -11,81 +11,60 @@ This repository contains Terraform code to provision basic Azure infrastructure 
 ## Prerequisites
 
 1. **Azure Subscription**: You need an active Azure subscription
-2. **Spacelift Account**: Created in your Hyland organization (https://krupakar-hyland.app.spacelift.io)
-3. **Service Principal**: For Spacelift to authenticate with Azure using federated credentials
+2. **Spacelift Account**: https://krupakar-hyland.app.spacelift.io
+3. **Managed Identity**: Created in Azure with federated credentials configured
+4. **Stack**: `azure-demo-stack` created in Spacelift
 
-## Initial Setup Steps
+## Configuration
 
-### Step 1: Create Azure Service Principal for Spacelift
+### Azure Federated Credentials
 
-```bash
-# Login to Azure
-az login
+This setup uses OIDC-based federated credentials for authentication. Five separate credentials are configured for different purposes:
 
-# Get your subscription ID
-SUBSCRIPTION_ID=$(az account show --query id -o tsv)
+| Purpose | Subject | Scope |
+| --- | --- | --- |
+| **Terraform Apply** | `space:<space-id>:stack:azure-demo-stack:run_type:TRACKED:scope:write` | Write |
+| **Terraform Plan** | `space:<space-id>:stack:azure-demo-stack:run_type:TRACKED:scope:read` | Read |
+| **Pull Request Plan** | `space:<space-id>:stack:azure-demo-stack:run_type:PROPOSED:scope:read` | Read |
+| **Manual Task** | `space:<space-id>:stack:azure-demo-stack:run_type:TASK:scope:write` | Write |
+| **Destroy** | `space:<space-id>:stack:azure-demo-stack:run_type:DESTROY:scope:write` | Write |
 
-# Create service principal
-az ad sp create-for-rbac \
-  --name "spacelift-sp" \
-  --role "Contributor" \
-  --scopes "/subscriptions/$SUBSCRIPTION_ID"
+**OIDC Issuer Details:**
+- **Issuer URL**: `https://moviepotter.app.spacelift.io`
+- **Audience**: `moviepotter.app.spacelift.io`
 
-# Note: Save the output - you'll need the appId and objectId
-```
+### Stack Environment Variables
 
-### Step 2: Create Manual Stack in Spacelift (Portal Method)
-
-1. Go to your Spacelift account: https://krupakar-hyland.app.spacelift.io
-2. Click **Create Stack** → **New Stack**
-3. Configure:
-   - **Name**: `azure-demo-stack`
-   - **Repository**: Select this repository
-   - **Branch**: `main`
-   - **Project**: Create or select existing project
-4. Click **Create Stack**
-
-### Step 3: Configure Federated Credentials in Spacelift
-
-1. In Spacelift, go to **Settings** → **Integrations** → **Azure**
-2. Choose **Federated Credentials** authentication
-3. Fill in:
-   - **Tenant ID**: Your Azure tenant ID
-   - **Subscription ID**: Your Azure subscription ID
-   - **Client ID**: Service principal app ID
-4. Create the federated credential relationship between Spacelift and Azure
-
-### Step 4: Configure Stack Environment Variables
-
-In the Spacelift UI, set these as Stack Environment Variables:
+Configure these in the Spacelift stack settings:
 
 ```
-ARM_CLIENT_ID = <your-service-principal-client-id>
-ARM_TENANT_ID = <your-azure-tenant-id>
-ARM_SUBSCRIPTION_ID = <your-subscription-id>
+ARM_CLIENT_ID = <managed-identity-client-id>
+ARM_TENANT_ID = <azure-tenant-id>
+ARM_SUBSCRIPTION_ID = <azure-subscription-id>
 ARM_USE_OIDC = true
+ARM_OIDC_TOKEN_FILE_PATH = /mnt/workspace/spacelift.oidc
 ```
 
-### Step 5: Create terraform.tfvars
+### Terraform Configuration
 
+1. Copy the example variables file:
 ```bash
-# Copy the example file and customize
 cp terraform.tfvars.example terraform.tfvars
-
-# Edit with your values
-nano terraform.tfvars
 ```
 
-Update the storage account name to be globally unique (lowercase alphanumeric only).
+2. Update with your values (storage account name must be globally unique, lowercase alphanumeric only)
 
-### Step 6: Initialize and Plan
+### Running Stack
 
 In Spacelift UI:
 
-1. Go to your stack
-2. Click **Actions** → **Plan**
-3. Review the proposed changes
-4. If approved, click **Actions** → **Apply**
+1. Go to **Stacks** → **azure-demo-stack**
+2. **Plan**: Click **Actions** → **Plan**
+   - Emits: `TRACKED` + `read` scope
+3. **Apply**: Click **Actions** → **Apply** (after plan approval)
+   - Emits: `TRACKED` + `write` scope
+4. **Destroy**: Click **Actions** → **Destroy** (if needed)
+   - Emits: `DESTROY` + `write` scope
 
 ## Running Locally (Development)
 
@@ -105,21 +84,13 @@ terraform apply
 terraform destroy
 ```
 
-## Spacelift Integration Details
+## Authentication Flow
 
-### Managed Identity vs Federated Credentials
-
-- **Managed Identity**: Works when Spacelift runs on Azure infrastructure (Azure VM, App Service)
-- **Federated Credentials**: Recommended for external Spacelift (uses OIDC tokens)
-
-Since you're using the cloud-hosted Spacelift, **federated credentials** is the right approach.
-
-### Authentication Flow
-
-1. Spacelift generates an OIDC token
-2. Token is exchanged with Azure AD for an access token
-3. Terraform uses the access token to provision resources
-4. No secrets stored - purely token-based authentication
+1. Spacelift generates an OIDC token based on the run type and scope
+2. Token is written to `/mnt/workspace/spacelift.oidc` during execution
+3. Azure provider exchanges token with Azure AD for an access token
+4. Terraform uses the access token to provision resources
+5. No secrets stored - purely token-based OIDC authentication
 
 ## Outputs
 
@@ -148,10 +119,15 @@ After applying, you'll get:
 
 ## Troubleshooting
 
-**Issue: Authentication fails**
-- Verify federated credential is configured in Spacelift
-- Check ARM_* environment variables are set correctly
-- Ensure service principal has Contributor role on subscription
+**Issue: OIDC authentication fails**
+- Verify federated credentials are configured in Azure for all required purposes
+- Check that Subject claims match your space ID and stack name
+- Ensure Issuer URL and Audience match Azure federated credential configuration
+- Verify `ARM_OIDC_TOKEN_FILE_PATH` points to `/mnt/workspace/spacelift.oidc`
+
+**Issue: Insufficient permissions**
+- Verify managed identity has appropriate RBAC roles on the subscription
+- Check that federated credential scope (read/write) matches the operation type
 
 **Issue: Storage account name already exists**
 - Change `storage_account_name` in terraform.tfvars (must be unique globally)
