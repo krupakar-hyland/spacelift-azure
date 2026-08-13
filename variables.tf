@@ -50,5 +50,6 @@ variable "common_tags" {
   default = {
     Environment = "dev"
     ManagedBy   = "Spacelift"
+    Project     = "Spacelift-Demo"
   }
 }
