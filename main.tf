@@ -44,6 +44,6 @@ resource "azurerm_storage_account" "main" {
 # Storage Container (optional example)
 resource "azurerm_storage_container" "main" {
   name                  = var.storage_container_name
-  storage_account_name  = azurerm_storage_account.main.name
+  storage_account_id    = azurerm_storage_account.main.id
   container_access_type = "private"
 }
