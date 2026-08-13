@@ -1,0 +1,16 @@
+# Copy this file to terraform.tfvars and update with your values
+# DO NOT commit terraform.tfvars with sensitive data
+
+location                      = "eastus"
+resource_group_name          = "rg-spacelift-demo"
+storage_account_name         = "stsplfdemo12345"  # Must be globally unique
+storage_account_tier         = "Standard"
+storage_account_replication_type = "GRS"
+storage_container_name       = "data"
+
+common_tags = {
+  Environment = "dev"
+  ManagedBy   = "Spacelift"
+  Project     = "Spacelift-Demo"
+  Owner       = "YourTeam"
+}
