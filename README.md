@@ -54,17 +54,36 @@ cp terraform.tfvars.example terraform.tfvars
 
 2. Update with your values (storage account name must be globally unique, lowercase alphanumeric only)
 
-### Running Stack
+### GitHub Integration & Webhooks
 
-In Spacelift UI:
+For automatic runs when pushing code or opening pull requests, you need to connect Spacelift to GitHub via the **GitHub App integration** (not raw Git).
 
-1. Go to **Stacks** → **azure-demo-stack**
-2. **Plan**: Click **Actions** → **Plan**
-   - Emits: `TRACKED` + `read` scope
-3. **Apply**: Click **Actions** → **Apply** (after plan approval)
-   - Emits: `TRACKED` + `write` scope
-4. **Destroy**: Click **Actions** → **Destroy** (if needed)
-   - Emits: `DESTROY` + `write` scope
+**Why it matters:**
+- **Raw Git URL**: Spacelift can clone the repo, but GitHub has no way to notify Spacelift about changes. Runs only trigger manually or on schedule.
+- **GitHub App**: Installs an OAuth app on your repo that registers webhooks. GitHub automatically notifies Spacelift on every push and pull request, triggering automatic runs.
+
+**Setup:**
+
+1. **Install GitHub App Integration**
+   - Go to: `https://krupakar-hyland.app.spacelift.io/vcs/integrations`
+   - Click **Create Integration** → **GitHub App**
+   - Authorize and grant access to `krupakar-hyland` organization and this repository
+
+2. **Configure Stack Source Code**
+   - Go to: `https://krupakar-hyland.app.spacelift.io/stack/azure-demo-stack/settings/source-code`
+   - Change from **Raw Git** to the **GitHub App** integration
+   - Specify branch: `main`
+
+3. **Verify Webhook**
+   - The webhook is automatically registered with GitHub
+   - You can verify it in: GitHub repo → Settings → Webhooks
+   - Webhook URL points to: `https://moviepotter.app.spacelift.io`
+
+**Automatic Run Triggers:**
+- **Push to main branch**: Triggers a `TRACKED` run (proposed changes can be applied)
+- **Pull Request**: Triggers a `PROPOSED` run (plan-only, no apply until merged)
+- **Direct Apply**: Manually trigger in Spacelift UI with **Actions** → **Apply**
+- **Destroy**: Manually trigger in Spacelift UI with **Actions** → **Destroy**
 
 ## Running Locally (Development)
 
@@ -91,25 +110,6 @@ terraform destroy
 3. Azure provider exchanges token with Azure AD for an access token
 4. Terraform uses the access token to provision resources
 5. No secrets stored - purely token-based OIDC authentication
-
-## Outputs
-
-After applying, you'll get:
-
-- Resource Group ID and name
-- Storage Account ID and name
-- Primary blob endpoint
-- Storage Container ID
-
-## Next Steps
-
-1. Create the manual stack in Spacelift first
-2. Test planning and applying
-3. Explore Spacelift features:
-   - **Policies**: Enforce infrastructure standards
-   - **Drift Detection**: Monitor real vs declared state
-   - **Scheduled Runs**: Automate regular deployments
-   - **Notifications**: Slack, Teams, PagerDuty integration
 
 ## Useful Links
 
