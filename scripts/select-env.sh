@@ -1,0 +1,19 @@
+#!/bin/sh
+set -e
+
+if [ -z "$ENVIRONMENT" ]; then
+  echo "ERROR: ENVIRONMENT variable is not set on this stack."
+  echo "Set it under Stack Settings > Environment (e.g. ENVIRONMENT=dev)."
+  exit 1
+fi
+
+TFVARS_FILE="environments/${ENVIRONMENT}.tfvars"
+
+if [ ! -f "$TFVARS_FILE" ]; then
+  echo "ERROR: $TFVARS_FILE not found. Available environments:"
+  ls -1 environments/ | sed 's/\.tfvars$//'
+  exit 1
+fi
+
+cp "$TFVARS_FILE" ./spacelift.auto.tfvars
+echo "Loaded variables from $TFVARS_FILE"
