@@ -45,14 +45,36 @@ ARM_USE_OIDC = true
 ARM_OIDC_TOKEN_FILE_PATH = /mnt/workspace/spacelift.oidc
 ```
 
-### Terraform Configuration
+### Multi-Environment Variables (Init Hook + .auto.tfvars)
 
-1. Copy the example variables file:
-```bash
-cp terraform.tfvars.example terraform.tfvars
-```
+Environment-specific values live in `environments/<env>.tfvars` and are committed to the repo (non-secret config only). Each Spacelift stack is pointed at one environment via a single `ENVIRONMENT` stack variable — the stack itself doesn't hardcode any values.
 
-2. Update with your values (storage account name must be globally unique, lowercase alphanumeric only)
+**How it works:**
+
+1. `.spacelift/config.yml` defines a `before_init` hook that runs on every plan/apply
+2. The hook reads the `ENVIRONMENT` variable set on the stack (e.g. `dev`, `staging`, `prod`)
+3. It copies `environments/${ENVIRONMENT}.tfvars` → `spacelift.auto.tfvars` in the run workspace
+4. Terraform auto-loads `*.auto.tfvars` files — no `-var-file` flag needed
+
+**Setup per stack:**
+
+1. Create one Spacelift stack per environment (e.g. `azure-demo-dev`, `azure-demo-staging`, `azure-demo-prod`), all pointing at the same repo/branch/project root
+2. On each stack, set the environment variable:
+   ```
+   ENVIRONMENT = dev      # or staging, prod
+   ```
+3. Run Plan — the hook output confirms which file was loaded:
+   ```
+   Loaded variables from environments/dev.tfvars
+   ```
+
+**Adding a new environment:**
+
+1. Create `environments/qa.tfvars` with the required variables (see `variables.tf`)
+2. Create a new Spacelift stack (or reuse an existing one) with `ENVIRONMENT=qa`
+3. No changes needed to `.spacelift/config.yml` or Terraform code
+
+For local testing without Spacelift, see **Running Locally** below.
 
 ### GitHub Integration & Webhooks
 
@@ -88,21 +110,21 @@ For automatic runs when pushing code or opening pull requests, you need to conne
 
 ## Running Locally (Development)
 
-If you want to test locally before creating the stack:
+The `.spacelift/config.yml` hook only runs inside Spacelift. Locally, load an environment file yourself before running Terraform:
 
 ```bash
-# Install Terraform
+# Pick an environment
+cp environments/dev.tfvars terraform.tfvars
+
 terraform init
-
-# Plan the deployment
 terraform plan
-
-# Apply if satisfied
 terraform apply
 
 # Destroy when done
 terraform destroy
 ```
+
+Or use `terraform.tfvars.example` as a starting point for one-off values that don't belong to any committed environment.
 
 ## Authentication Flow
 

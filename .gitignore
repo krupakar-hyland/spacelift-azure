@@ -4,6 +4,8 @@
 *.tfvars
 *.tfvars.json
 !terraform.tfvars.example
+!environments/*.tfvars
+spacelift.auto.tfvars
 .terraform/
 .terraform.lock.hcl
 *.log

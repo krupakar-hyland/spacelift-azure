@@ -5,7 +5,12 @@
       "Bash(git add *)",
       "Bash(git commit -m 'Initial Spacelift Azure infrastructure setup *)",
       "Bash(git config *)",
-      "Bash(git commit *)"
+      "Bash(git commit *)",
+      "Bash(git checkout *)",
+      "Bash(git pull *)",
+      "WebSearch",
+      "Bash(terraform init *)",
+      "Read(//tmp/**)"
     ]
   }
 }
