@@ -178,66 +178,78 @@ Use Spacelift initialization hooks to automatically select and inject correct tf
 ```
 spacelift-azure/
 ├── environments/
-│   ├── dev.auto.tfvars
-│   ├── staging.auto.tfvars
-│   └── prod.auto.tfvars
+│   ├── dev.tfvars
+│   ├── staging.tfvars
+│   └── prod.tfvars
+├── scripts/
+│   └── select-env.sh       # Hook logic lives in a real script, not inline YAML
+├── .spacelift/
+│   └── config.yml          # Spacelift runtime configuration (the real filename)
 ├── main.tf
 ├── variables.tf
-├── outputs.tf
-└── spacelift.yml          # Spacelift configuration
+└── outputs.tf
 ```
 
-**Spacelift.yml with Init Hook:**
+**`.spacelift/config.yml`:**
 ```yaml
-version: "1"
+version: 1
 
-# Set environment variable per stack (via Spacelift context)
-init:
-  - |
-    #!/bin/bash
-    set -e
-    
-    # Copy environment-specific tfvars
-    if [ -z "$ENVIRONMENT" ]; then
-      echo "ERROR: ENVIRONMENT variable not set"
-      exit 1
-    fi
-    
-    TFVARS_FILE="environments/${ENVIRONMENT}.auto.tfvars"
-    if [ ! -f "$TFVARS_FILE" ]; then
-      echo "ERROR: $TFVARS_FILE not found"
-      exit 1
-    fi
-    
-    cp "$TFVARS_FILE" spacelift.auto.tfvars
-    echo "Loaded variables from $TFVARS_FILE"
+stack_defaults:
+  before_init:
+    - chmod +x ./scripts/select-env.sh
+    - ./scripts/select-env.sh
 ```
 
-**environments/dev.auto.tfvars:**
+> `before_init` (and the other hook phases) take a **list of single-line shell commands**. A multi-line block scalar containing blank lines will break: Spacelift's hook runner splits it by newline and rejoins the pieces with `&&`, and blank lines become empty strings in that join — producing `&& &&` and a shell syntax error. Keep multi-step logic in an actual script and call it as one line, as above.
+
+**scripts/select-env.sh:**
+```bash
+#!/bin/sh
+set -e
+
+if [ -z "$ENVIRONMENT" ]; then
+  echo "ERROR: ENVIRONMENT variable is not set on this stack."
+  echo "Set it under Stack Settings > Environment (e.g. ENVIRONMENT=dev)."
+  exit 1
+fi
+
+TFVARS_FILE="environments/${ENVIRONMENT}.tfvars"
+
+if [ ! -f "$TFVARS_FILE" ]; then
+  echo "ERROR: $TFVARS_FILE not found. Available environments:"
+  ls -1 environments/ | sed 's/\.tfvars$//'
+  exit 1
+fi
+
+cp "$TFVARS_FILE" ./spacelift.auto.tfvars
+echo "Loaded variables from $TFVARS_FILE"
+```
+
+**environments/dev.tfvars:**
 ```hcl
-location                      = "eastus"
-resource_group_name          = "rg-dev-demo"
-storage_account_name         = "stdevdemo123"
-storage_account_replication_type = "LRS"
+location                          = "eastus"
+resource_group_name               = "rg-spacelift-demo-dev"
+storage_account_name              = "stspldemodev001"
+storage_account_replication_type  = "LRS"
 
 common_tags = {
-  Environment = "development"
+  Environment = "dev"
   ManagedBy   = "Spacelift"
-  CostCenter  = "engineering"
+  Project     = "Spacelift-Demo"
 }
 ```
 
-**environments/prod.auto.tfvars:**
+**environments/prod.tfvars:**
 ```hcl
-location                      = "eastus"
-resource_group_name          = "rg-prod-demo"
-storage_account_name         = "stproddemo123"
-storage_account_replication_type = "GRS"
+location                          = "eastus"
+resource_group_name               = "rg-spacelift-demo-prod"
+storage_account_name              = "stspldemoprod001"
+storage_account_replication_type  = "GRS"
 
 common_tags = {
   Environment = "production"
   ManagedBy   = "Spacelift"
-  CostCenter  = "operations"
+  Project     = "Spacelift-Demo"
 }
 ```
 
@@ -636,10 +648,13 @@ resource "spacelift_stack" "workspace_prod" {
 ```
 spacelift-azure/
 ├── environments/
-│   ├── dev.auto.tfvars
-│   ├── staging.auto.tfvars
-│   └── prod.auto.tfvars
-├── spacelift.yml (with init hook)
+│   ├── dev.tfvars
+│   ├── staging.tfvars
+│   └── prod.tfvars
+├── scripts/
+│   └── select-env.sh
+├── .spacelift/
+│   └── config.yml (with before_init hook)
 ├── main.tf
 ├── variables.tf
 └── outputs.tf
@@ -686,8 +701,8 @@ spacelift-infrastructure/  (separate repo)
 ## IMPLEMENTATION ROADMAP
 
 ### Week 1: Local Development
-- [ ] Create environments/*.auto.tfvars files
-- [ ] Add spacelift.yml with init hook
+- [ ] Create environments/*.tfvars files
+- [ ] Add .spacelift/config.yml with before_init hook calling scripts/select-env.sh
 - [ ] Test with `terraform init && terraform plan`
 - [ ] Verify ENVIRONMENT variable switching works
 
@@ -785,32 +800,41 @@ resource "spacelift_context_attachment" "infrastructure" {
 ```
 
 ### Init Hook for Auto-Selection
-```yaml
-# spacelift-azure/spacelift.yml
-version: "1"
 
-init:
-  - |
-    #!/bin/bash
-    set -e
-    
-    if [ -z "$ENVIRONMENT" ]; then
-      echo "ERROR: ENVIRONMENT variable not set"
-      exit 1
-    fi
-    
-    TFVARS_FILE="environments/${ENVIRONMENT}.auto.tfvars"
-    
-    if [ ! -f "$TFVARS_FILE" ]; then
-      echo "ERROR: $TFVARS_FILE not found"
-      echo "Available environments:"
-      ls -1 environments/*.auto.tfvars | sed 's/.*\///; s/\.auto\.tfvars//'
-      exit 1
-    fi
-    
-    cp "$TFVARS_FILE" spacelift.auto.tfvars
-    echo "✓ Loaded variables from $TFVARS_FILE"
+`.spacelift/config.yml`:
+```yaml
+version: 1
+
+stack_defaults:
+  before_init:
+    - chmod +x ./scripts/select-env.sh
+    - ./scripts/select-env.sh
 ```
+
+`scripts/select-env.sh`:
+```bash
+#!/bin/sh
+set -e
+
+if [ -z "$ENVIRONMENT" ]; then
+  echo "ERROR: ENVIRONMENT variable not set"
+  exit 1
+fi
+
+TFVARS_FILE="environments/${ENVIRONMENT}.tfvars"
+
+if [ ! -f "$TFVARS_FILE" ]; then
+  echo "ERROR: $TFVARS_FILE not found"
+  echo "Available environments:"
+  ls -1 environments/*.tfvars | sed 's/.*\///; s/\.tfvars//'
+  exit 1
+fi
+
+cp "$TFVARS_FILE" spacelift.auto.tfvars
+echo "Loaded variables from $TFVARS_FILE"
+```
+
+> Keep hook logic in a real script called as a single-line command. A multi-line YAML block scalar with blank lines will break — Spacelift's hook runner joins split lines with `&&`, and blank lines become empty strings in that join, producing a shell syntax error.
 
 ### GitHub Actions Deployment
 ```yaml
