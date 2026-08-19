@@ -2,5 +2,5 @@ version: 1
 
 stack_defaults:
   before_init:
-    - chmod +x ./scripts/select-env.sh
-    - ./scripts/select-env.sh
+    - chmod +x ../../scripts/select-env.sh
+    - ../../scripts/select-env.sh
