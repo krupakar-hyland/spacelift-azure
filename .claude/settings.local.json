@@ -10,7 +10,16 @@
       "Bash(git pull *)",
       "WebSearch",
       "Bash(terraform init *)",
-      "Read(//tmp/**)"
+      "Read(//tmp/**)",
+      "Bash(git rm *)",
+      "Bash(chmod +x *)",
+      "Bash(ENVIRONMENT=dev sh ./scripts/select-env.sh)",
+      "Bash(git mv *)",
+      "Bash(ENVIRONMENT=dev sh ../../scripts/select-env.sh)",
+      "Bash(git restore *)",
+      "Bash(git ls-tree *)",
+      "Bash(spacectl profile *)",
+      "Bash(spacectl stack *)"
     ]
   }
 }

@@ -59,7 +59,7 @@ Environment-specific values live in `apps/<app>/environments/<env>.tfvars` and a
 3. The hook reads the `ENVIRONMENT` variable set on the stack (e.g. `dev`, `staging`, `prod`) and copies `environments/${ENVIRONMENT}.tfvars` → `./spacelift.auto.tfvars` — both paths relative to the app folder
 4. Terraform auto-loads `*.auto.tfvars` files — no `-var-file` flag needed
 
-See [`docs/MULTI_APP_STRUCTURE.md`](./docs/MULTI_APP_STRUCTURE.md) for why the hook is `../../scripts/select-env.sh` (two levels back to the repo root from `apps/<app>/`) and the full per-stack settings table.
+See [`docs/MULTI_APP_STRUCTURE.md`](./docs/MULTI_APP_STRUCTURE.md) for why the hook is anchored on `TF_VAR_spacelift_workspace_root` (a dynamic variable Spacelift sets on every run) rather than a relative path, and the full per-stack settings table.
 
 **Setup per stack:**
 
@@ -142,6 +142,49 @@ Or use `apps/storage/terraform.tfvars.example` as a starting point for one-off v
 3. Azure provider exchanges token with Azure AD for an access token
 4. Terraform uses the access token to provision resources
 5. No secrets stored - purely token-based OIDC authentication
+
+## Spacelift Environment Variables Reference
+
+Every run exposes a set of variables in the shell environment (visible to hooks) and, for anything prefixed `TF_VAR_`, as Terraform input variables too. Captured from a real run's `env | sort` output:
+
+**Workspace & path resolution:**
+
+| Variable | Example value | Purpose |
+|---|---|---|
+| `PWD` | `/mnt/workspace/source/apps/networking` | Confirms cwd during hooks is the stack's Project Root, not the repo root |
+| `TF_VAR_spacelift_workspace_root` | `/mnt/workspace` | The run's workspace directory — one level above the repo clone. `.spacelift/config.yml`'s hook is anchored on this |
+| `TF_VAR_spacelift_project_root` | `apps/networking` | The Project Root configured on the stack |
+
+**Azure authentication (OIDC):**
+
+| Variable | Purpose |
+|---|---|
+| `ARM_USE_OIDC` | Tells the azurerm provider to use OIDC instead of a client secret |
+| `ARM_CLIENT_ID` / `ARM_TENANT_ID` / `ARM_SUBSCRIPTION_ID` | Identify which managed identity/tenant/subscription to authenticate as |
+| `ARM_OIDC_TOKEN_FILE_PATH` | Where Spacelift writes the signed OIDC token for the provider to read |
+| `SPACELIFT_OIDC_TOKEN` | The raw Spacelift-issued OIDC token (masked in logs) |
+
+**Run identity & metadata:**
+
+| Variable | Example value | Purpose |
+|---|---|---|
+| `TF_VAR_spacelift_run_id` | `01M0CVT6FR8AN34ZTGWJZ2T35T` | Unique ID for this run |
+| `TF_VAR_spacelift_run_type` | `TRACKED` | Push-triggered run (vs `PROPOSED` for PRs, `TASK`, `DESTROY`) |
+| `TF_VAR_spacelift_run_state` | `INITIALIZING` | Current run phase |
+| `TF_VAR_spacelift_run_trigger` | your email | Who/what triggered the run |
+| `TF_VAR_spacelift_commit_sha` / `commit_branch` | commit SHA / `feature/multi-app-structure` | Exact commit and branch being run |
+| `TF_VAR_spacelift_stack_id` | `azure-multiapp-demo-stack` | Which stack this is |
+
+**Account & platform context:**
+
+| Variable | Example value | Purpose |
+|---|---|---|
+| `TF_VAR_spacelift_account_name` | `moviepotter` | Your Spacelift account slug |
+| `TF_VAR_spacelift_space_id` | `root` | Which Spacelift space the stack lives in |
+| `TF_IN_AUTOMATION` | `1` | Tells Terraform it's running non-interactively |
+| `ENVIRONMENT` | `dev` | Not Spacelift-native — our own variable that `scripts/select-env.sh` reads |
+
+Since every `TF_VAR_spacelift_*` variable is automatically usable as a Terraform input (`var.spacelift_run_trigger`, etc.), these can drive resource tags or naming without any extra wiring — e.g. `common_tags.DeployedBy = var.spacelift_run_trigger`.
 
 ## Useful Links
 

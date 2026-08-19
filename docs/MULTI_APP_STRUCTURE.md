@@ -46,26 +46,21 @@ spacelift-azure/
 
 ## Why It Works
 
-Three Spacelift behaviors make this pattern possible — get any of them wrong and the setup breaks silently:
+Three things make this pattern possible:
 
-1. **`.spacelift/config.yml` lives at the repo root only**, never inside a Project Root subfolder. One shared hook config serves every stack, regardless of which app folder it targets — there's no per-folder config file mechanism.
-2. **The working directory for hooks (`before_init`, etc.) is the stack's Project Root, not the repo root.** Spacelift clones the repo to `/mnt/workspace/source/` and uses that as the working directory *unless* Project Root overrides it — which it does here, for every app stack.
-3. **Never set `project_root` inside `stack_defaults` in the shared `config.yml`.** Settings in `config.yml` take precedence over per-stack UI settings, so a repo-wide default there would silently force every stack onto the same folder. Project Root stays a **per-stack** setting.
+1. **`.spacelift/config.yml` lives at the repo root only** — one shared hook config serves every stack, regardless of which app folder it targets.
+2. **Hooks run with the stack's Project Root as the working directory, not the repo root.** Spacelift clones the repo to `/mnt/workspace/source/`; a real run's `env | sort` output confirmed this directly — `TF_VAR_spacelift_workspace_root=/mnt/workspace` and `PWD=/mnt/workspace/source/apps/networking`. Because of this, `scripts/select-env.sh` needs **zero per-app changes** — it already resolves `environments/${ENVIRONMENT}.tfvars` relative to cwd, and cwd is always the correct app folder.
+3. **Never set `project_root` inside `stack_defaults`.** Settings in `config.yml` take precedence over per-stack UI settings, so a repo-wide default there would silently force every stack onto the same folder. Project Root stays a per-stack setting.
 
-**Practical effect:** `scripts/select-env.sh`'s own logic (`environments/${ENVIRONMENT}.tfvars`, resolved relative to cwd) needs **zero changes** to work per-app — cwd automatically becomes the correct app folder. Only the hook's *invocation path* in `config.yml` needs adjusting, since `scripts/` stays at the repo root while cwd moves into `apps/<name>/`.
+> **Watch out — UI hooks silently replace `stack_defaults`, they don't merge with it.** If a stack has *any* `before_init` hook added directly in Spacelift's UI (e.g. left over from testing), that fully overrides `stack_defaults.before_init` for that stack — no error, no log line, Terraform just falls back to `variables.tf` defaults since `spacelift.auto.tfvars` never gets created. Confirmed directly: a stack with 5 manually-added UI hooks (`ls -al`, `env | sort`, etc.) logged `Initializing workspace with 5 custom hooks...` and never ran the repo's script. **Every stack needs zero UI-defined hooks** for the shared config to take effect.
 
-### Confirmed by a live run
+### Troubleshooting: resources created with default values
 
-A real `TRACKED` run on the `networking` app showed exactly this behavior:
+Symptom: the apply succeeds, but resources come up with `variables.tf` defaults instead of `environments/<env>.tfvars` values, and the init log never shows `Loaded variables from environments/<env>.tfvars`.
 
-```
-PWD=/mnt/workspace/source/apps/networking
-ENVIRONMENT=dev
-TF_VAR_spacelift_workspace_root=/mnt/workspace
-TF_VAR_spacelift_project_root=apps/networking
-```
-
-`PWD` is the app's Project Root, not the repo root — matching the design above exactly.
+Check the **Initializing** phase of the run (separate from Plan/Apply, easy to miss) for `Initializing workspace with N custom hooks...`:
+- `N` matches `config.yml`'s count (2 here — the `chmod` + script call) → the shared hook is running; look further down that phase for the actual failure.
+- `N` is anything else → the stack has its own UI-defined hooks (see callout above). Remove them so `stack_defaults` takes over.
 
 Sources: [Runtime Configuration](https://docs.spacelift.io/concepts/configuration/runtime-configuration), [Runtime YAML Reference](https://docs.spacelift.io/concepts/configuration/runtime-configuration/runtime-yaml-reference), [Stack Settings](https://docs.spacelift.io/concepts/stack/stack-settings), [Environment](https://docs.spacelift.io/concepts/configuration/environment), [Handling .tfvars](https://docs.spacelift.io/vendors/terraform/handling-tfvars).
 
@@ -78,21 +73,21 @@ version: 1
 
 stack_defaults:
   before_init:
-    - chmod +x ../../scripts/select-env.sh
-    - ../../scripts/select-env.sh
+    - chmod +x "${TF_VAR_spacelift_workspace_root}/source/scripts/select-env.sh"
+    - "${TF_VAR_spacelift_workspace_root}/source/scripts/select-env.sh"
 ```
 
-**Why `../../`:** cwd during hook execution is the stack's Project Root (e.g. `apps/storage`), exactly two path segments below the repo root under the `apps/<name>/` convention. `../..` from there lands back at the repo root, where `scripts/select-env.sh` lives — correct as long as every app folder stays at that fixed depth.
+`TF_VAR_spacelift_workspace_root` is a dynamic variable Spacelift sets on every run — the run's workspace directory (`/mnt/workspace`), one level above where the repo is cloned (`/mnt/workspace/source/`). Appending `/source/scripts/select-env.sh` gives an absolute path that resolves correctly from any app's Project Root, at any nesting depth.
 
-**If depth ever varies** (e.g. `apps/team-a/storage` nested deeper than `apps/networking`), anchor on the confirmed `TF_VAR_spacelift_workspace_root` variable instead of a relative path:
+**Simpler alternative, if every app stays at the same depth:** since cwd during hooks is always the app's Project Root, a fixed relative path also works:
 ```yaml
 before_init:
-  - chmod +x "${TF_VAR_spacelift_workspace_root}/source/scripts/select-env.sh"
-  - "${TF_VAR_spacelift_workspace_root}/source/scripts/select-env.sh"
+  - chmod +x ../../scripts/select-env.sh
+  - ../../scripts/select-env.sh
 ```
-The fixed relative-path form stays the default recommendation — it's simpler and doesn't depend on any variable being set, so use the absolute form only when folder depth genuinely isn't uniform across apps.
+`../..` from `apps/storage` (two segments below the repo root) lands back at the root — correct only as long as every app folder sits at that same fixed depth. The absolute form above has no such constraint, which is why it's the default here.
 
-`scripts/select-env.sh` itself needs no changes from the single-app version.
+`scripts/select-env.sh` itself needs no changes either way.
 
 ---
 
@@ -127,7 +122,7 @@ Add it once **≥2 apps need identical, nontrivial, multi-resource logic** that 
 ## Adding a New App
 
 1. Create `apps/<name>/` with its own `main.tf`/`variables.tf`/`outputs.tf`/`environments/{dev,staging,prod}.tfvars`
-2. Create three Spacelift stacks (`<name>-dev`, `<name>-staging`, `<name>-prod`), each with Project Root `apps/<name>`
+2. Create three Spacelift stacks (`<name>-dev`, `<name>-staging`, `<name>-prod`), each with Project Root `apps/<name>`, with **no UI-defined hooks** on any of them
 3. No changes needed to `.spacelift/config.yml` or `scripts/select-env.sh`
 
 This is exactly how `apps/networking/` was added alongside `apps/storage/` — see its `main.tf` (VNet + subnet), `variables.tf`, and `environments/*.tfvars` for a working reference.
