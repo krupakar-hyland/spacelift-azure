@@ -2,18 +2,21 @@
 
 This repository contains Terraform code to provision basic Azure infrastructure using Spacelift with managed identity and federated credentials.
 
-## Resources Included
+**This branch (`feature/multi-app-structure`) demonstrates multiple independent Terraform apps in one repo** — see [`docs/MULTI_APP_STRUCTURE.md`](./docs/MULTI_APP_STRUCTURE.md) for the full design and rationale. In short: each app lives in its own folder under `apps/`, with its own `environments/`, and every Spacelift stack sets its **Project Root** to that app's folder.
 
-- **Resource Group**: Basic Azure resource container
-- **Storage Account**: Azure Storage with multiple replication options
-- **Storage Container**: Blob storage container within the storage account
+## Apps
+
+| App | Path | Resources |
+|---|---|---|
+| `storage` | `apps/storage/` | Resource Group, Storage Account, Storage Container |
+| `networking` | `apps/networking/` | Resource Group, Virtual Network, Subnet |
 
 ## Prerequisites
 
 1. **Azure Subscription**: You need an active Azure subscription
 2. **Spacelift Account**: https://moviepotter.app.spacelift.io
 3. **Managed Identity**: Created in Azure with federated credentials configured
-4. **Stack**: `azure-demo-stack` created in Spacelift
+4. **Stacks**: one Spacelift stack per (app × environment) — see [Spacelift Stack Configuration](./docs/MULTI_APP_STRUCTURE.md#spacelift-stack-configuration-per-app--environment) for the naming convention and settings table
 
 ## Configuration
 
@@ -47,18 +50,20 @@ ARM_OIDC_TOKEN_FILE_PATH = /mnt/workspace/spacelift.oidc
 
 ### Multi-Environment Variables (Init Hook + .auto.tfvars)
 
-Environment-specific values live in `environments/<env>.tfvars` and are committed to the repo (non-secret config only). Each Spacelift stack is pointed at one environment via a single `ENVIRONMENT` stack variable — the stack itself doesn't hardcode any values.
+Environment-specific values live in `apps/<app>/environments/<env>.tfvars` and are committed to the repo (non-secret config only). Each Spacelift stack is pointed at one app (via **Project Root**) and one environment (via a single `ENVIRONMENT` stack variable) — no Terraform code hardcodes either.
 
 **How it works:**
 
-1. `.spacelift/config.yml` defines a `before_init` hook that runs on every plan/apply
-2. The hook reads the `ENVIRONMENT` variable set on the stack (e.g. `dev`, `staging`, `prod`)
-3. It copies `environments/${ENVIRONMENT}.tfvars` → `spacelift.auto.tfvars` in the run workspace
+1. `.spacelift/config.yml` (at the repo root, shared by every stack) defines a `before_init` hook that runs on every plan/apply
+2. Because the stack's Project Root is set to `apps/<app>`, the hook runs with that folder as its working directory
+3. The hook reads the `ENVIRONMENT` variable set on the stack (e.g. `dev`, `staging`, `prod`) and copies `environments/${ENVIRONMENT}.tfvars` → `./spacelift.auto.tfvars` — both paths relative to the app folder
 4. Terraform auto-loads `*.auto.tfvars` files — no `-var-file` flag needed
+
+See [`docs/MULTI_APP_STRUCTURE.md`](./docs/MULTI_APP_STRUCTURE.md) for why the hook is `../../scripts/select-env.sh` (two levels back to the repo root from `apps/<app>/`) and the full per-stack settings table.
 
 **Setup per stack:**
 
-1. Create one Spacelift stack per environment (e.g. `azure-demo-dev`, `azure-demo-staging`, `azure-demo-prod`), all pointing at the same repo/branch/project root
+1. Create one Spacelift stack per (app × environment), e.g. `storage-dev`, `storage-staging`, `storage-prod`, `networking-dev`, etc. — set each stack's **Project Root** to `apps/storage` or `apps/networking` accordingly
 2. On each stack, set the environment variable:
    ```
    ENVIRONMENT = dev      # or staging, prod
@@ -68,11 +73,13 @@ Environment-specific values live in `environments/<env>.tfvars` and are committe
    Loaded variables from environments/dev.tfvars
    ```
 
-**Adding a new environment:**
+**Adding a new environment to an existing app:**
 
-1. Create `environments/qa.tfvars` with the required variables (see `variables.tf`)
-2. Create a new Spacelift stack (or reuse an existing one) with `ENVIRONMENT=qa`
+1. Create `apps/<app>/environments/qa.tfvars` with the required variables (see that app's `variables.tf`)
+2. Create a new Spacelift stack (or reuse an existing one) with `ENVIRONMENT=qa` and Project Root `apps/<app>`
 3. No changes needed to `.spacelift/config.yml` or Terraform code
+
+**Adding a new app:** create a new `apps/<name>/` folder (its own `main.tf`/`variables.tf`/`outputs.tf`/`environments/`) and new Spacelift stacks pointed at it — again, no changes needed to `.spacelift/config.yml` or `scripts/select-env.sh`.
 
 For local testing without Spacelift, see **Running Locally** below.
 
@@ -110,9 +117,11 @@ For automatic runs when pushing code or opening pull requests, you need to conne
 
 ## Running Locally (Development)
 
-The `.spacelift/config.yml` hook only runs inside Spacelift. Locally, load an environment file yourself before running Terraform:
+The `.spacelift/config.yml` hook only runs inside Spacelift. Locally, `cd` into the app you want to run and load an environment file yourself:
 
 ```bash
+cd apps/storage   # or apps/networking
+
 # Pick an environment
 cp environments/dev.tfvars terraform.tfvars
 
@@ -124,7 +133,7 @@ terraform apply
 terraform destroy
 ```
 
-Or use `terraform.tfvars.example` as a starting point for one-off values that don't belong to any committed environment.
+Or use `apps/storage/terraform.tfvars.example` as a starting point for one-off values that don't belong to any committed environment.
 
 ## Authentication Flow
 
@@ -136,6 +145,8 @@ Or use `terraform.tfvars.example` as a starting point for one-off values that do
 
 ## Useful Links
 
+- [Multi-App Repo Structure](./docs/MULTI_APP_STRUCTURE.md) — how this branch is organized and why
+- [Variable Management Strategies](./docs/VARIABLE_STRATEGIES.md)
 - [Spacelift Azure Integration](https://docs.spacelift.io/integrations/cloud-providers/azure)
 - [Spacelift Stacks Documentation](https://docs.spacelift.io/concepts/stack)
 - [Azure Terraform Provider](https://registry.terraform.io/providers/hashicorp/azurerm/latest/docs)
@@ -153,7 +164,7 @@ Or use `terraform.tfvars.example` as a starting point for one-off values that do
 - Check that federated credential scope (read/write) matches the operation type
 
 **Issue: Storage account name already exists**
-- Change `storage_account_name` in terraform.tfvars (must be unique globally)
+- Change `storage_account_name` in `apps/storage/terraform.tfvars` (must be unique globally)
 
 **Issue: Terraform state conflicts**
 - In Spacelift UI, go to stack and click **Unlock** if state is locked
