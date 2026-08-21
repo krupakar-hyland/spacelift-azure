@@ -2,7 +2,7 @@
 
 This repository contains Terraform code to provision basic Azure infrastructure using Spacelift with managed identity and federated credentials.
 
-**This branch (`feature/multi-app-structure`) demonstrates multiple independent Terraform apps in one repo** — see [`docs/MULTI_APP_STRUCTURE.md`](./docs/MULTI_APP_STRUCTURE.md) for the full design and rationale. In short: each app lives in its own folder under `apps/`, with its own `environments/`, and every Spacelift stack sets its **Project Root** to that app's folder.
+Each app lives in its own folder under `apps/`, with its own `environments/`, and every Spacelift stack sets its **Project Root** to that app's folder.
 
 ## Apps
 
